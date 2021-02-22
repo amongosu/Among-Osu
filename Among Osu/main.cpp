@@ -18,6 +18,7 @@ const unsigned char sig_viewport[] = { 0x89, 0x45, 0xC8, 0x8B, 0x72, 0x0C, 0x8B,
 const unsigned char sig_time[] = { 0x7E, 0x55, 0x8B, 0x76, 0x10, 0xDB, 0x05 };
 const unsigned char sig_player[] = { 0xFF, 0x50, 0x0C, 0x8B, 0xD8, 0x8B, 0x15 };
 bool g_wait_for_input = false;
+int g_current_idx{};
 InterceptionDevice g_queued_input_device{};
 InterceptionStroke g_queued_input_stroke{};
 
@@ -31,10 +32,33 @@ int main() {
     std::cout << "[+] _time_offset: " << std::hex << _time_offset << std::dec << std::endl;
     std::cout << "[+] _player_offset: " << std::hex << _player_offset << std::dec << std::endl;
 
+    std::thread reset_thread([&]
+        {
+            bool unique_check{};
+            while (true)
+            {
+                if (!player(read<uint32_t>(_player_offset)).is_loaded())
+                {
+                	if (!unique_check)
+                	{
+                        std::cout << "reset" << std::endl;
+                        unique_check = true;
+                        g_current_idx = 0;
+                	}
+                }else
+                {
+                    unique_check = false;
+                }
+                Sleep(10);
+            }
+        });
+    reset_thread.detach();
+
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> pre_randomizer(-11, 18);
-    std::uniform_int_distribution<> post_randomizer(38, 58);
+    std::uniform_int_distribution<> pre_randomizer(-22, 25); //50ms-100 //90ms-50 //25ms-300
+    std::uniform_int_distribution<> post_randomizer_circle(30, 40);
+    std::uniform_int_distribution<> post_randomizer_slider(0, 0); //(38, 58);
     
     InterceptionDevice device{};
     InterceptionStroke stroke{};
@@ -47,57 +71,53 @@ int main() {
     {
         if (interception_is_keyboard(device))
         {
-            g_queued_input_device = device;
             const auto key_code = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->code;
-        	
-        	if (key_code == 2 || key_code == 3)
-        	{
+
+            if (key_code == 2 || key_code == 3)
+            {
                 if (reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state)
                     continue;
-                const auto _viewport = viewport(read<uint32_t>(_viewport_offset));
-                const auto _time = read<int>(_time_offset);
                 const auto _player = player(read<uint32_t>(_player_offset));
-                if (_player.is_loaded())
+                if (_player.is_loaded() && !g_wait_for_input)
                 {
-                    const auto hit_object_ = _player.get_current_hit_object(_time);
+                    const auto hit_object_ = _player.get_current_hit_object(&g_current_idx, read<int>(_time_offset));
                     if (hit_object_.is_valid())
                     {
                         const auto time_info = hit_object_.get_time_info();
                         {
-                            if (!g_wait_for_input)
-                            {
-                                reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->state = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state;
-                                reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->code = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->code;
-                                reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->information = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->information;
-                                g_wait_for_input = true;
-                                std::thread wait_and_input([&]
-                                    {
-                                        const auto pre_sleep = (time_info.first - pre_randomizer(rd)) - _time;
-                                        if (pre_sleep > 0)
-											Sleep(pre_sleep);
-                                        interception_send(context, g_queued_input_device, &g_queued_input_stroke, 1);
-                                        const auto post_sleep = (time_info.second + post_randomizer(rd)) - time_info.first;
-                                        if (post_sleep > 0)
-											Sleep(post_sleep);
-                                        reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->state = 1;
-                                        interception_send(context, g_queued_input_device, &g_queued_input_stroke, 1);
-                                        g_wait_for_input = false;
-                                    });
+                            g_queued_input_device = device;
+                            reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->state = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state;
+                            reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->code = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->code;
+                            reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->information = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->information;
+                            g_wait_for_input = true;
+                            std::thread wait_and_input([&]
+                                {
+                                    const auto pre_random = pre_randomizer(rd);
+                                    while (((time_info.first - pre_random) > read<int>(_time_offset)) && _player.is_loaded()) { }
+                                    interception_send(context, g_queued_input_device, &g_queued_input_stroke, 1);
+                                    const auto post_random = (time_info.second != time_info.first) ? post_randomizer_slider(rd) : post_randomizer_circle(rd);
+                                    while (((time_info.second + post_random) > read<int>(_time_offset)) && _player.is_loaded()) { }
+                                    reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->state = 1;
+                                    interception_send(context, g_queued_input_device, &g_queued_input_stroke, 1);
+                                    g_wait_for_input = false;
+                                });
 
-                                wait_and_input.detach();
-                            }
+                            wait_and_input.detach();
+
+                            continue;
                         }
                     }
                 }
-
-                continue;
-        	}
-            if (key_code == 57) // space bar
-                break;
-
-            interception_send(context, device, &stroke, 1);
+            }
+            else
+            {
+                interception_send(context, device, &stroke, 1);
+            }
         }
 
+        if (GetAsyncKeyState(VK_SPACE) && GetAsyncKeyState(VK_CONTROL))
+            break;
+    	
     	/*
         if (interception_is_mouse(device))
         {
