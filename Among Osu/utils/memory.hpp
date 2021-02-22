@@ -112,6 +112,34 @@ namespace memory {
         CloseHandle(h_token);
     }
 
+    inline uint32_t find_pattern(const unsigned char pattern[], const char* mask, const int offset, size_t begin = 0x04000000) {
+        const size_t signature_size = strlen(mask);
+        const size_t read_size = 4096;
+        bool hit = false;
+
+        unsigned char chunk[read_size]{};
+
+        for (size_t i = begin; i < 0x20000000; i += read_size - signature_size) {
+            ReadProcessMemory(h_process, LPCVOID(i), &chunk, read_size, NULL);
+
+            for (size_t a = 0; a < read_size; a++) {
+                hit = true;
+
+                for (size_t j = 0; j < signature_size && hit; j++) {
+                    if (mask[j] != '?' && chunk[a + j] != pattern[j]) {
+                        hit = false;
+                    }
+                }
+
+                if (hit) {
+                    return i + a + offset;
+                }
+            }
+        }
+
+        return NULL;
+    }
+
     inline void initialize()
     {
         h_process = OpenProcess(PROCESS_ALL_ACCESS, false, get_pid_by_name(L"osu!.exe"));

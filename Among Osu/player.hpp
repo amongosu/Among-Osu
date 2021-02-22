@@ -46,11 +46,14 @@ public:
 	//
 	hit_object get_current_hit_object(const int time) const
     {
-    	for (auto i = 0; i < hit_object_count_; i++)
+        const auto current_idx = read<int>(hit_object_mgr_ + 0x8C);
+    	for (auto i = max(current_idx - 5, 0); i < min(current_idx + 5, hit_object_count_); i++)
     	{
             auto hit_object_ = get_hit_object(i);
+            if (hit_object_.get_hit_state() && hit_object_.get_object_type() == hit_object_type::circle)
+                continue;
             const auto time_info = hit_object_.get_time_info();
-            if (time_info.first - 1000 < time && time_info.second > time)
+            if (time_info.first - 1000 < time && time_info.second + (hit_object_.get_object_type() == hit_object_type::circle ? 200 : 0) > time)
                 return hit_object_;
     	}
 
