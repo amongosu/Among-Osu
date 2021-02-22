@@ -56,7 +56,13 @@ int main() {
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> pre_randomizer(-22, 25); //50ms-100 //90ms-50 //25ms-300
+    //50ms-100 //90ms-50 //25ms-300
+    std::uniform_int_distribution<> pre_randomizer_1(-4, 7);
+    std::uniform_int_distribution<> pre_randomizer_2_1(-12, -5);
+    std::uniform_int_distribution<> pre_randomizer_3_1(7, 15);
+    std::uniform_int_distribution<> pre_randomizer_2_2(-22, -13);
+    std::uniform_int_distribution<> pre_randomizer_3_2(16, 25);
+    std::uniform_int_distribution<> pre_randomizer_selector(1, 12);
     std::uniform_int_distribution<> post_randomizer_circle(30, 40);
     std::uniform_int_distribution<> post_randomizer_slider(0, 0); //(38, 58);
     
@@ -92,7 +98,18 @@ int main() {
                             g_wait_for_input = true;
                             std::thread wait_and_input([&]
                                 {
-                                    const auto pre_random = pre_randomizer(rd);
+                                    const auto pre_random_selector = pre_randomizer_selector(rd);
+                                    auto pre_random = 0;
+                            		if (pre_random_selector > 5)
+										pre_random = pre_randomizer_1(rd);
+                                    else if (pre_random_selector == 5)
+                                        pre_random = pre_randomizer_2_1(rd);
+                                    else if (pre_random_selector == 4 || pre_random_selector == 3)
+                                        pre_random = pre_randomizer_3_1(rd);
+                                    else if (pre_random_selector == 2)
+                                        pre_random = pre_randomizer_2_2(rd);
+                                    else if (pre_random_selector == 1)
+                                        pre_random = pre_randomizer_3_2(rd);
                                     while (((time_info.first - pre_random) > read<int>(_time_offset)) && _player.is_loaded()) { }
                                     interception_send(context, g_queued_input_device, &g_queued_input_stroke, 1);
                                     const auto post_random = (time_info.second != time_info.first) ? post_randomizer_slider(rd) : post_randomizer_circle(rd);
