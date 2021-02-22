@@ -64,7 +64,7 @@ int main() {
     std::uniform_int_distribution<> pre_randomizer_3_2(16, 25);
     std::uniform_int_distribution<> pre_randomizer_selector(1, 12);
     std::uniform_int_distribution<> post_randomizer_circle(30, 40);
-    std::uniform_int_distribution<> post_randomizer_slider(0, 0); //(38, 58);
+    std::uniform_int_distribution<> post_randomizer_slider(38, 58);
     
     InterceptionDevice device{};
     InterceptionStroke stroke{};
