@@ -17,7 +17,7 @@ bool settings_bot = true;
 const unsigned char sig_viewport[] = { 0x89, 0x45, 0xC8, 0x8B, 0x72, 0x0C, 0x8B, 0x15 }; //credit: https://github.com/mrflashstudio/osu-rx/blob/master/OsuManager/Memory/Signatures.cs
 const unsigned char sig_time[] = { 0x7E, 0x55, 0x8B, 0x76, 0x10, 0xDB, 0x05 };
 const unsigned char sig_player[] = { 0xFF, 0x50, 0x0C, 0x8B, 0xD8, 0x8B, 0x15 };
-bool g_wait_for_input = false;
+int g_wait_for_input{};
 int g_current_idx{};
 InterceptionDevice g_queued_input_device{};
 InterceptionStroke g_queued_input_stroke{};
@@ -64,7 +64,7 @@ int main() {
     std::uniform_int_distribution<> pre_randomizer_3_2(16, 25);
     std::uniform_int_distribution<> pre_randomizer_selector(1, 12);
     std::uniform_int_distribution<> post_randomizer_circle(30, 40);
-    std::uniform_int_distribution<> post_randomizer_slider(38, 58);
+    std::uniform_int_distribution<> post_randomizer_slider(0, 0);
     
     InterceptionDevice device{};
     InterceptionStroke stroke{};
@@ -81,48 +81,54 @@ int main() {
 
             if (key_code == 2 || key_code == 3)
             {
-                if (reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state)
-                    continue;
                 const auto _player = player(read<uint32_t>(_player_offset));
-                if (_player.is_loaded() && !g_wait_for_input)
+                if (_player.is_loaded() && (g_wait_for_input < 6))
                 {
+                    if (reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state)
+                        continue;
                     const auto hit_object_ = _player.get_current_hit_object(&g_current_idx, read<int>(_time_offset));
                     if (hit_object_.is_valid())
                     {
-                        const auto time_info = hit_object_.get_time_info();
-                        {
-                            g_queued_input_device = device;
-                            reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->state = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state;
-                            reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->code = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->code;
-                            reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->information = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->information;
-                            g_wait_for_input = true;
-                            std::thread wait_and_input([&]
-                                {
-                                    const auto pre_random_selector = pre_randomizer_selector(rd);
-                                    auto pre_random = 0;
-                            		if (pre_random_selector > 5)
-										pre_random = pre_randomizer_1(rd);
-                                    else if (pre_random_selector == 5)
-                                        pre_random = pre_randomizer_2_1(rd);
-                                    else if (pre_random_selector == 4 || pre_random_selector == 3)
-                                        pre_random = pre_randomizer_3_1(rd);
-                                    else if (pre_random_selector == 2)
-                                        pre_random = pre_randomizer_2_2(rd);
-                                    else if (pre_random_selector == 1)
-                                        pre_random = pre_randomizer_3_2(rd);
-                                    while (((time_info.first - pre_random) > read<int>(_time_offset)) && _player.is_loaded()) { }
-                                    interception_send(context, g_queued_input_device, &g_queued_input_stroke, 1);
-                                    const auto post_random = (time_info.second != time_info.first) ? post_randomizer_slider(rd) : post_randomizer_circle(rd);
-                                    while (((time_info.second + post_random) > read<int>(_time_offset)) && _player.is_loaded()) { }
-                                    reinterpret_cast<InterceptionKeyStroke*>(&g_queued_input_stroke)->state = 1;
-                                    interception_send(context, g_queued_input_device, &g_queued_input_stroke, 1);
-                                    g_wait_for_input = false;
-                                });
+                        g_queued_input_device = device;
+                        InterceptionStroke passed_stroke{};
+                        reinterpret_cast<InterceptionKeyStroke*>(&passed_stroke)->state = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state;
+                        reinterpret_cast<InterceptionKeyStroke*>(&passed_stroke)->code = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->code;
+                        reinterpret_cast<InterceptionKeyStroke*>(&passed_stroke)->information = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->information;
+                        g_wait_for_input++;
+                        std::thread wait_and_input([&, hit_object_]
+                            {
+                                const auto time_info_ = hit_object_.get_time_info();
+                                InterceptionStroke temp_stroke{};
+                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->state = reinterpret_cast<const InterceptionKeyStroke*>(&passed_stroke)->state;
+                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->code = reinterpret_cast<const InterceptionKeyStroke*>(&passed_stroke)->code;
+                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->information = reinterpret_cast<const InterceptionKeyStroke*>(&passed_stroke)->information;
+                                const auto pre_random_selector = pre_randomizer_selector(rd);
+                                auto pre_random = 0;
+                                if (pre_random_selector > 5)
+                                    pre_random = pre_randomizer_1(rd);
+                                else if (pre_random_selector == 5)
+                                    pre_random = pre_randomizer_2_1(rd);
+                                else if (pre_random_selector == 4 || pre_random_selector == 3)
+                                    pre_random = pre_randomizer_3_1(rd);
+                                else if (pre_random_selector == 2)
+                                    pre_random = pre_randomizer_2_2(rd);
+                                else if (pre_random_selector == 1)
+                                    pre_random = pre_randomizer_3_2(rd);
+                                while (((time_info_.first - pre_random) > read<int>(_time_offset)) && _player.is_loaded()) {}
+                                interception_send(context, g_queued_input_device, &temp_stroke, 1);
+                                auto idx_next = g_current_idx + 1;
+                                const auto hit_object_next_ = _player.get_current_hit_object(&idx_next, read<int>(_time_offset));
+                                const auto post_random = (time_info_.second != time_info_.first) ? post_randomizer_slider(rd) : post_randomizer_circle(rd);
+                                const auto post_randomized_value = (hit_object_next_.is_valid() && (idx_next <= _player.get_max_object_count())) ? min(time_info_.second + post_random, hit_object_next_.get_time_info().first) : time_info_.second + post_random;
+                                while ((post_randomized_value > read<int>(_time_offset)) && _player.is_loaded()) {}
+                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->state = 1;
+                                interception_send(context, g_queued_input_device, &temp_stroke, 1);
+                                g_wait_for_input--;
+                            });
 
-                            wait_and_input.detach();
+                        wait_and_input.detach();
 
-                            continue;
-                        }
+                        continue;
                     }
                 }
             }

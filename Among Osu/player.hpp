@@ -30,6 +30,11 @@ public:
         return read<bool>(base_ + 0x182);
     }
 
+	int get_max_object_count() const
+    {
+        return hit_object_count_;
+    }
+
 	beatmap get_beatmap() const
     {
         return beatmap(read<uint32_t>(base_ + 0xD4));
