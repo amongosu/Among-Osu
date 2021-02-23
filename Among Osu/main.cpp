@@ -1,5 +1,7 @@
 #include <random>
 #include <thread>
+#include <unordered_map>
+
 
 
 #include "hit_object.hpp"
@@ -21,6 +23,7 @@ int g_wait_for_input{};
 int g_current_idx{};
 InterceptionDevice g_queued_input_device{};
 InterceptionStroke g_queued_input_stroke{};
+std::unordered_map<int, int> g_queued_thread_created{};
 
 int main() {
     memory::initialize();
@@ -44,6 +47,7 @@ int main() {
                         std::cout << "reset" << std::endl;
                         unique_check = true;
                         g_current_idx = 0;
+                        g_queued_thread_created.clear();
                 	}
                 }else
                 {
@@ -82,54 +86,66 @@ int main() {
             if (key_code == 2 || key_code == 3)
             {
                 const auto _player = player(read<uint32_t>(_player_offset));
-                if (_player.is_loaded() && (g_wait_for_input < 6))
+                if (_player.is_loaded())
                 {
-                    if (reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state)
-                        continue;
-                    const auto hit_object_ = _player.get_current_hit_object(&g_current_idx, read<int>(_time_offset));
-                    if (hit_object_.is_valid())
+                    if (g_wait_for_input < 6)
                     {
-                        g_queued_input_device = device;
-                        InterceptionStroke passed_stroke{};
-                        reinterpret_cast<InterceptionKeyStroke*>(&passed_stroke)->state = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state;
-                        reinterpret_cast<InterceptionKeyStroke*>(&passed_stroke)->code = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->code;
-                        reinterpret_cast<InterceptionKeyStroke*>(&passed_stroke)->information = reinterpret_cast<InterceptionKeyStroke*>(&stroke)->information;
-                        g_wait_for_input++;
-                        std::thread wait_and_input([&, hit_object_]
-                            {
-                                const auto time_info_ = hit_object_.get_time_info();
-                                InterceptionStroke temp_stroke{};
-                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->state = reinterpret_cast<const InterceptionKeyStroke*>(&passed_stroke)->state;
-                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->code = reinterpret_cast<const InterceptionKeyStroke*>(&passed_stroke)->code;
-                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->information = reinterpret_cast<const InterceptionKeyStroke*>(&passed_stroke)->information;
-                                const auto pre_random_selector = pre_randomizer_selector(rd);
-                                auto pre_random = 0;
-                                if (pre_random_selector > 5)
-                                    pre_random = pre_randomizer_1(rd);
-                                else if (pre_random_selector == 5)
-                                    pre_random = pre_randomizer_2_1(rd);
-                                else if (pre_random_selector == 4 || pre_random_selector == 3)
-                                    pre_random = pre_randomizer_3_1(rd);
-                                else if (pre_random_selector == 2)
-                                    pre_random = pre_randomizer_2_2(rd);
-                                else if (pre_random_selector == 1)
-                                    pre_random = pre_randomizer_3_2(rd);
-                                while (((time_info_.first - pre_random) > read<int>(_time_offset)) && _player.is_loaded()) {}
-                                interception_send(context, g_queued_input_device, &temp_stroke, 1);
-                                auto idx_next = g_current_idx + 1;
-                                const auto hit_object_next_ = _player.get_current_hit_object(&idx_next, read<int>(_time_offset));
-                                const auto post_random = (time_info_.second != time_info_.first) ? post_randomizer_slider(rd) : post_randomizer_circle(rd);
-                                const auto post_randomized_value = (hit_object_next_.is_valid() && (idx_next <= _player.get_max_object_count())) ? min(time_info_.second + post_random, hit_object_next_.get_time_info().first) : time_info_.second + post_random;
-                                while ((post_randomized_value > read<int>(_time_offset)) && _player.is_loaded()) {}
-                                reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->state = 1;
-                                interception_send(context, g_queued_input_device, &temp_stroke, 1);
-                                g_wait_for_input--;
-                            });
+                        if (reinterpret_cast<InterceptionKeyStroke*>(&stroke)->state)
+                            continue;
+                        const auto hit_object_ = _player.get_current_hit_object(&g_current_idx, read<int>(_time_offset));
+                        if (hit_object_.is_valid())
+                        {
+                            g_queued_input_device = device;
+                            g_wait_for_input++;
+                            g_queued_thread_created[g_current_idx]++;
+                            std::thread wait_and_input([&, hit_object_, stroke, current_idx{ g_current_idx }]
+                                {
+                                    const auto current_thread_id = g_queued_thread_created[g_current_idx];
+                                    InterceptionStroke temp_stroke{};
+                                    reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->state = reinterpret_cast<const InterceptionKeyStroke*>(&stroke)->state;
+                                    reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->code = reinterpret_cast<const InterceptionKeyStroke*>(&stroke)->code;
+                                    reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->information = reinterpret_cast<const InterceptionKeyStroke*>(&stroke)->information;
+                                    const auto pre_random_selector = pre_randomizer_selector(rd);
+                                    auto pre_random = 0;
+                                    if (pre_random_selector > 5)
+                                        pre_random = pre_randomizer_1(rd);
+                                    else if (pre_random_selector == 5)
+                                        pre_random = pre_randomizer_2_1(rd);
+                                    else if (pre_random_selector == 4 || pre_random_selector == 3)
+                                        pre_random = pre_randomizer_3_1(rd);
+                                    else if (pre_random_selector == 2)
+                                        pre_random = pre_randomizer_2_2(rd);
+                                    else if (pre_random_selector == 1)
+                                        pre_random = pre_randomizer_3_2(rd);
+                                    const auto time_info_ = hit_object_.get_time_info();
+                                    while (((time_info_.first - pre_random) > read<int>(_time_offset)) && _player.is_loaded())
+                                    {
+	                                    if (g_queued_thread_created[current_idx] > current_thread_id)
+	                                    {
+                                            g_wait_for_input--;
+                                            return;
+	                                    }
+                                    }
+                                    interception_send(context, g_queued_input_device, &temp_stroke, 1);
+                                    auto idx_next = current_idx + 1;
+                                    const auto hit_object_next_ = _player.get_current_hit_object(&idx_next, read<int>(_time_offset));
+                                    const auto post_random = (time_info_.second != time_info_.first) ? post_randomizer_slider(rd) : post_randomizer_circle(rd);
+                                    const auto post_randomized_value = (hit_object_next_.is_valid() && (idx_next <= _player.get_max_object_count())) ? min(time_info_.second + post_random, hit_object_next_.get_time_info().first) : time_info_.second + post_random;
+                                    while ((post_randomized_value > read<int>(_time_offset)) && _player.is_loaded()) {}
+                                    reinterpret_cast<InterceptionKeyStroke*>(&temp_stroke)->state = 1;
+                                    interception_send(context, g_queued_input_device, &temp_stroke, 1);
+                                    g_wait_for_input--;
+                                });
 
-                        wait_and_input.detach();
+                            wait_and_input.detach();
 
-                        continue;
+                            continue;
+                        }
                     }
+                }
+                else
+                {
+                    interception_send(context, device, &stroke, 1);
                 }
             }
             else
