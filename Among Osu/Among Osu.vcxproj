@@ -88,7 +88,14 @@
     <ClInclude Include="beatmap.hpp" />
     <ClInclude Include="hit_object.hpp" />
     <ClInclude Include="player.hpp" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="viewport.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Among Osu.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Among Osu.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

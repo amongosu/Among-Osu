@@ -8,5 +8,12 @@
     <ClInclude Include="player.hpp" />
     <ClInclude Include="hit_object.hpp" />
     <ClInclude Include="beatmap.hpp" />
+    <ClInclude Include="resource.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Among Osu.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="Among Osu.ico" />
   </ItemGroup>
 </Project>
