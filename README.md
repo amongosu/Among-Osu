@@ -1,7 +1,7 @@
 # Among-Osu
  Can peppy catch the impostor among osu?
  
- [discord server](https://discord.gg/ZWsxcQFtWA)
+ [discord server](https://discord.gg/ZWsxcQFtWA)  
  [download!](https://github.com/he4rtbleed/Among-Osu/releases/download/release-v1/Release.zip)
 
 ### HOW TO USE
